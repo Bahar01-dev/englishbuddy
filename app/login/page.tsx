@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { translateAuthError } from "@/lib/errors";
@@ -13,6 +13,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "link_expired") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError(
+        "Ссылка устарела или уже использована. Запроси новую через «Забыли пароль?»."
+      );
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -80,9 +90,17 @@ export default function LoginPage() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="password" className="text-sm text-white/80">
-              Пароль
-            </label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="password" className="text-sm text-white/80">
+                Пароль
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium text-white/50 transition-colors hover:text-[#a98fff]"
+              >
+                Забыли пароль?
+              </Link>
+            </div>
             <input
               id="password"
               type="password"
