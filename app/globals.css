@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FAF9FC;
+  --foreground: #27272A;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent: #6D4DF0; /* затемнён для AA: white-on-accent 5.29, accent-on-light 5.04 */
+  --color-muted: #71717A;
+  --color-correction-bg: #FDE68A;
+  --color-correction-text: #92400E;
+  --color-success-bg: #86EFAC;
+  --color-success-text: #166534;
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), -apple-system, sans-serif;
+}
