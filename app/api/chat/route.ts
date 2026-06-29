@@ -67,13 +67,41 @@ async function openStreamWithRetry(
   },
   logCtx: Record<string, unknown>
 ): Promise<AsyncIterator<StreamEvent>> {
+  // Prompt caching (GA на claude-sonnet-4-6, без beta-заголовков): кешируем
+  //  • системный блок (вместе с tools, т.к. tools рендерятся раньше system) —
+  //    в пределах одного урока он стабилен, повторные ходы читают кеш ~0.1× стоимости;
+  //  • хвост истории — каждый следующий ход переиспользует префикс предыдущего.
+  // Эффект: резко ниже time-to-first-token на 2-м и далее ходах, особенно к концу урока.
+  const cachedSystem = [
+    {
+      type: "text" as const,
+      text: params.system,
+      cache_control: { type: "ephemeral" as const },
+    },
+  ];
+  const lastIdx = params.messages.length - 1;
+  const cachedMessages = params.messages.map((m, i) =>
+    i === lastIdx
+      ? {
+          role: m.role,
+          content: [
+            {
+              type: "text" as const,
+              text: m.content,
+              cache_control: { type: "ephemeral" as const },
+            },
+          ],
+        }
+      : m
+  );
+
   for (let attempt = 0; ; attempt++) {
     try {
       const s = anthropic.messages.stream({
         model: MODEL,
         max_tokens: MAX_TOKENS,
-        system: params.system,
-        messages: params.messages,
+        system: cachedSystem,
+        messages: cachedMessages,
         tools: params.tools,
       });
       const it = s[Symbol.asyncIterator]() as AsyncIterator<StreamEvent>;
@@ -257,7 +285,12 @@ export async function POST(request: Request) {
             if (toolName) {
               const frame = toolFrame(toolName, toolBuf);
               if (frame) {
-                sawTool = true;
+                // set_phase сам по себе — НЕ ответ ученику (это только бейдж фазы).
+                // Засчитываем как «ответ» лишь содержательные инструменты, иначе ход
+                // из одного set_phase без текста сохранится в БД пустым (FR-баг).
+                if (toolName === "complete_lesson" || toolName === "finish_diagnosis") {
+                  sawTool = true;
+                }
                 controller.enqueue(encoder.encode(frame));
               }
               toolName = "";
