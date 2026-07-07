@@ -15,6 +15,8 @@ EnglishBuddy/
 │   │   ├── lesson/finish/route.ts   # апсерт vocab/ошибок + SRS + streak, завершение
 │   │   ├── tts/route.ts             # ElevenLabs TTS-прокси
 │   │   └── cron/reminders/route.ts  # Vercel Cron: email-напоминания (FR-32, service_role)
+│   ├── auth/callback/route.ts        # обмен PKCE-code на сессию (сброс пароля / verify)
+│   ├── forgot-password | reset-password/page.tsx  # сброс пароля (Supabase Auth)
 │   ├── onboarding/page.tsx          # диалоговая диагностика уровня
 │   ├── dashboard/page.tsx           # кабинет: уроки, прогресс, streak
 │   ├── lesson/[id]/page.tsx         # экран урока (стриминг, фазы, голос)
@@ -77,10 +79,11 @@ Supabase Postgres (RLS: auth.uid() = user_id) + Anthropic / ElevenLabs (внеш
 5. **Подписка заложена в модель данных, оплата — позже (P1).** Поля `plan`/`subscription_*`/лимиты в схеме; Stripe/paywall не строим в v1, но включаем без миграции-ломки.
 
 ## Тестирование
-- **Сейчас автотестов НЕТ** (нет test-фреймворка). Проверка — через критерии готовности фаз в `Plan.md` и acceptance-критерии спецификации (раздел 3, 7).
-- При добавлении логики (SRS, диагностика, апсерт памяти) — закладывать unit-тесты на чистые функции (`lib/srs.ts`, сопоставление ошибок в `lesson/finish`).
+- **Юнит-тесты: Vitest** (`npm test` → `vitest run`, конфиг `vitest.config.ts` с alias `@/`). Покрыто обучающее ядро (чистые функции): `lib/srs`, `lib/streak`, `lib/review`, `lib/syllabus`, `lib/email`, `lib/error-match`. Остальная проверка — через критерии готовности фаз в `Plan.md` и acceptance-критерии спецификации (раздел 3, 7).
+- Логику сопоставления/разбора из route-хендлеров выносить в чистые модули (пример: `lib/error-match.ts` вынесен из `lesson/finish`) и тестировать отдельно от Supabase.
+- При добавлении логики (SRS, диагностика, апсерт памяти) — рядом класть `*.test.ts` на чистые функции.
 - **Чек-лист перед сервером:**
-  - [ ] `npm run build` и `npm run lint` — чисто
+  - [ ] `npm test`, `npm run build` и `npm run lint` — чисто
   - [ ] Все `app/api/*` требуют сессию (401 без auth); system-промпт НЕ принимается от клиента
   - [ ] Секреты не в git; `.env` в `.gitignore`, `.env.example` — плейсхолдеры
   - [ ] Сквозной прогон: регистрация → диагностика → урок (текст+голос) → завершение → dashboard

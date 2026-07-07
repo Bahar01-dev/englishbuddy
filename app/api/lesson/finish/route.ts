@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import { nextSchedule, initialSchedule } from "@/lib/srs";
-import { applyLessonCompletion } from "@/lib/streak";
+import { applyLessonCompletion, DEFAULT_TZ_OFFSET_MINUTES } from "@/lib/streak";
+import { splitPhrase, findErrorMatch } from "@/lib/error-match";
 import type {
   ErrorMemoryItem,
   LessonCompletionError,
@@ -13,42 +14,22 @@ interface FinishRequestBody {
   scenarioTitle?: string | null;
   keyPhrases: string[];
   errors: LessonCompletionError[];
-}
-
-function significantWords(text: string): Set<string> {
-  return new Set(
-    text
-      .toLowerCase()
-      .split(/[^a-zа-яё0-9]+/i)
-      .filter((word) => word.length > 3)
-  );
-}
-
-function overlapRatio(a: string, b: string): number {
-  const wordsA = significantWords(a);
-  const wordsB = significantWords(b);
-  if (wordsA.size === 0 || wordsB.size === 0) return 0;
-
-  let common = 0;
-  for (const word of wordsA) {
-    if (wordsB.has(word)) common++;
-  }
-
-  return common / Math.min(wordsA.size, wordsB.size);
-}
-
-// «english phrase — перевод» → { en, ru }
-function splitPhrase(s: string): { en: string; ru: string | null } {
-  const parts = s.split(/\s+[—–-]\s+/);
-  if (parts.length >= 2) {
-    return { en: parts[0].trim(), ru: parts.slice(1).join(" - ").trim() || null };
-  }
-  return { en: s.trim(), ru: null };
+  tzOffsetMinutes?: number; // пояс устройства (Date.getTimezoneOffset()) для streak
 }
 
 export async function POST(request: Request) {
-  const { sessionId, scenarioTitle, keyPhrases, errors } =
-    (await request.json()) as FinishRequestBody;
+  // Битый JSON не должен давать 500 (как в /api/chat, /api/tts).
+  let body: FinishRequestBody;
+  try {
+    body = (await request.json()) as FinishRequestBody;
+  } catch {
+    return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
+  }
+  const { sessionId, scenarioTitle, keyPhrases, errors, tzOffsetMinutes } = body;
+
+  if (!sessionId || typeof sessionId !== "string") {
+    return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
+  }
 
   const supabase = await createServerClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -59,6 +40,29 @@ export async function POST(request: Request) {
   const userId = userData.user.id;
   const now = new Date();
   const nowIso = now.toISOString();
+
+  // Идемпотентность (FR-30, целостность): проверяем сессию ДО любых записей.
+  // Урок не найден/чужой → 404; уже завершён → выходим, не трогая streak/vocab/SRS,
+  // иначе повторный finish (авто-complete + ручная кнопка, ретрай) задвоил бы SRS.
+  const { data: session } = await supabase
+    .from("lesson_sessions")
+    .select("status")
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .single();
+
+  if (!session) {
+    return NextResponse.json({ error: "Урок не найден." }, { status: 404 });
+  }
+  if (session.status === "completed") {
+    return NextResponse.json({ ok: true, alreadyCompleted: true });
+  }
+
+  // Пояс устройства для корректной границы «дня»; нет клиента → домашний UTC+5.
+  const tz =
+    typeof tzOffsetMinutes === "number"
+      ? tzOffsetMinutes
+      : DEFAULT_TZ_OFFSET_MINUTES;
 
   // Снимок текущего уровня + поля streak'а (FR-10, FR-30)
   const { data: profileSnapshot } = await supabase
@@ -74,7 +78,8 @@ export async function POST(request: Request) {
       longest_streak: profileSnapshot?.longest_streak ?? 0,
       last_active_date: profileSnapshot?.last_active_date ?? null,
     },
-    now
+    now,
+    tz
   );
   await supabase
     .from("profiles")
@@ -151,17 +156,7 @@ export async function POST(request: Request) {
     for (const item of errors) {
       if (!item.description) continue;
 
-      let match: ErrorMemoryItem | undefined;
-      if (item.isRepeat && item.topic) {
-        match = existingItems.find((e) => e.topic === item.topic);
-      }
-      if (!match && item.topic) {
-        match = existingItems.find(
-          (e) =>
-            e.topic === item.topic &&
-            overlapRatio(e.description, item.description) > 0.4
-        );
-      }
+      const match = findErrorMatch(item, existingItems);
 
       if (match) {
         touchedErrorIds.add(match.id);

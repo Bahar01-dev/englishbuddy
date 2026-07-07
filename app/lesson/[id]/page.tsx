@@ -216,6 +216,7 @@ export default function LessonPage() {
           scenarioTitle: data.scenario_title ?? null,
           keyPhrases: data.key_phrases ?? [],
           errors,
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
         }),
       });
     } catch {
@@ -237,6 +238,7 @@ export default function LessonPage() {
           scenarioTitle: null,
           keyPhrases: [],
           errors: [],
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
         }),
       });
     } catch {

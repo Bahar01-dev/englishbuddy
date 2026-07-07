@@ -1,6 +1,17 @@
 // Логика streak'а (FR-30): последовательные дни с выполненной дневной целью.
 // Чистые функции — считаются по датам (YYYY-MM-DD), чтобы быть тестируемыми и не
-// задваивать счётчик при нескольких уроках за день. Дата берётся по UTC (серверная).
+// задваивать счётчик при нескольких уроках за день.
+//
+// «День» считается по локальному времени пользователя, а не по UTC: иначе для
+// RU-часовых поясов (UTC+3…+5) урок ночью попадал бы в «предыдущий» день и ломал
+// серию на границе суток. Локальную зону передаём смещением tzOffsetMinutes —
+// ровно то, что отдаёт Date.prototype.getTimezoneOffset() в браузере (UTC−local,
+// напр. для МСК = −180). Default 0 = UTC (для серверных вызовов без клиента).
+
+// Запасной часовой пояс, когда клиент не прислал свой offset (напр. серверный cron
+// напоминаний). UTC+5 = Казахстан (домашний пояс основателя). getTimezoneOffset()
+// отдаёт UTC−local, поэтому UTC+5 = −300 минут.
+export const DEFAULT_TZ_OFFSET_MINUTES = -300;
 
 export interface StreakState {
   streak_count: number;
@@ -15,8 +26,9 @@ export interface StreakUpdate {
   incremented: boolean; // изменился ли счётчик в этом завершении (для UI)
 }
 
-export function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+export function toDateStr(d: Date, tzOffsetMinutes = 0): string {
+  // getTimezoneOffset() = UTC − local, поэтому локальное время = utc − offset.
+  return new Date(d.getTime() - tzOffsetMinutes * 60_000).toISOString().slice(0, 10);
 }
 
 function daysBetween(from: string, to: string): number {
@@ -32,9 +44,10 @@ function daysBetween(from: string, to: string): number {
  */
 export function applyLessonCompletion(
   state: StreakState,
-  now: Date = new Date()
+  now: Date = new Date(),
+  tzOffsetMinutes = 0
 ): StreakUpdate {
-  const today = toDateStr(now);
+  const today = toDateStr(now, tzOffsetMinutes);
   const last = state.last_active_date;
   const longest = state.longest_streak ?? 0;
   const current = state.streak_count ?? 0;
@@ -62,9 +75,10 @@ export function applyLessonCompletion(
 /** Выполнена ли дневная цель сегодня (для отображения на dashboard). */
 export function isGoalMetToday(
   lastActiveDate: string | null,
-  now: Date = new Date()
+  now: Date = new Date(),
+  tzOffsetMinutes = 0
 ): boolean {
-  return !!lastActiveDate && lastActiveDate === toDateStr(now);
+  return !!lastActiveDate && lastActiveDate === toDateStr(now, tzOffsetMinutes);
 }
 
 /**
@@ -73,8 +87,9 @@ export function isGoalMetToday(
  */
 export function isStreakAtRisk(
   state: StreakState,
-  now: Date = new Date()
+  now: Date = new Date(),
+  tzOffsetMinutes = 0
 ): boolean {
   if (!state.last_active_date || (state.streak_count ?? 0) <= 0) return false;
-  return daysBetween(state.last_active_date, toDateStr(now)) === 1;
+  return daysBetween(state.last_active_date, toDateStr(now, tzOffsetMinutes)) === 1;
 }

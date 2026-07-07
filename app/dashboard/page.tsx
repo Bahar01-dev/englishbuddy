@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Settings, BookOpen } from "lucide-react";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
-import { isGoalMetToday } from "@/lib/streak";
+import { isGoalMetToday, DEFAULT_TZ_OFFSET_MINUTES } from "@/lib/streak";
 import StartLessonButton from "@/components/StartLessonButton";
 import LessonCard from "@/components/LessonCard";
 import Logo from "@/components/Logo";
@@ -63,7 +63,12 @@ export default async function DashboardPage() {
 
   const streakCount = profile?.streak_count ?? 0;
   const dailyGoal = profile?.daily_goal ?? 1;
-  const goalMetToday = isGoalMetToday(profile?.last_active_date ?? null);
+  // Server-компонент: пояс устройства недоступен, считаем по домашнему UTC+5 (см. roadmap).
+  const goalMetToday = isGoalMetToday(
+    profile?.last_active_date ?? null,
+    new Date(),
+    DEFAULT_TZ_OFFSET_MINUTES
+  );
 
   const displayName =
     profile?.display_name || data.user.email?.split("@")[0] || "друг";

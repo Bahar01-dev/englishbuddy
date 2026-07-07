@@ -6,6 +6,7 @@ import { buildOnboardingSystemPrompt } from "@/lib/prompts/onboarding";
 import { LESSON_TOOLS, ONBOARDING_TOOLS } from "@/lib/tools";
 import { buildReviewQueue } from "@/lib/review";
 import { getUnitById } from "@/lib/syllabus";
+import { sanitizeMessages } from "@/lib/chat-request";
 import {
   phaseFrame,
   completeFrame,
@@ -162,7 +163,15 @@ export async function POST(request: Request) {
   }
 
   const kind = body.kind === "onboarding" ? "onboarding" : "lesson";
-  const messages = Array.isArray(body.messages) ? body.messages : [];
+  // Историю от клиента санитайзим: лимиты размера/количества (защита от cost/DoS),
+  // отбрасываем мусор, гарантируем старт с реплики user (требование Anthropic).
+  const messages = sanitizeMessages(body.messages);
+  if (messages.length === 0) {
+    return NextResponse.json(
+      { code: "bad_request", message: "Некорректный запрос." },
+      { status: 400 }
+    );
+  }
 
   // FR-02: системный промпт собирается ТОЛЬКО на сервере, клиент его не передаёт
   let system: string;

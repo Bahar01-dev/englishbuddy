@@ -111,7 +111,29 @@ describe("isStreakAtRisk", () => {
 });
 
 describe("toDateStr", () => {
-  it("форматирует дату как YYYY-MM-DD", () => {
+  it("форматирует дату как YYYY-MM-DD (UTC по умолчанию)", () => {
     expect(toDateStr(NOW)).toBe(TODAY);
+  });
+
+  it("сдвигает границу дня по часовому поясу (UTC+5 = −300)", () => {
+    // 22:00 UTC 24-го = 03:00 26-го... нет: 24-го 22:00 UTC + 5ч = 25-го 03:00 местного.
+    const lateUtc = new Date("2026-06-24T22:00:00.000Z");
+    expect(toDateStr(lateUtc)).toBe("2026-06-24"); // по UTC ещё 24-е
+    expect(toDateStr(lateUtc, -300)).toBe("2026-06-25"); // по UTC+5 уже 25-е
+  });
+});
+
+describe("applyLessonCompletion c часовым поясом", () => {
+  it("ночной урок в UTC+5 засчитывается локальным днём, а не UTC-вчера", () => {
+    // 24-е 21:00 UTC = 25-е 02:00 в UTC+5. Прошлый урок был 24-го (по местному).
+    const lateUtc = new Date("2026-06-24T21:00:00.000Z");
+    const r = applyLessonCompletion(
+      { streak_count: 2, longest_streak: 2, last_active_date: "2026-06-24" },
+      lateUtc,
+      -300
+    );
+    expect(r.last_active_date).toBe("2026-06-25");
+    expect(r.streak_count).toBe(3); // продолжение серии, а не сброс
+    expect(r.incremented).toBe(true);
   });
 });

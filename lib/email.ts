@@ -2,7 +2,11 @@
 // Отправка включается только при наличии RESEND_API_KEY — без ключа функция мягко
 // деградирует (лог + false), чтобы локальная разработка и сборка не падали.
 
-import { isGoalMetToday, isStreakAtRisk } from "@/lib/streak";
+import {
+  isGoalMetToday,
+  isStreakAtRisk,
+  DEFAULT_TZ_OFFSET_MINUTES,
+} from "@/lib/streak";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -34,8 +38,11 @@ export function selectReminderRecipients(
 ): ReminderRecipient[] {
   const recipients: ReminderRecipient[] = [];
 
+  // Пер-пользовательский пояс в v1 не хранится — считаем по домашнему UTC+5 (см. roadmap).
+  const tz = DEFAULT_TZ_OFFSET_MINUTES;
+
   for (const p of profiles) {
-    if (isGoalMetToday(p.last_active_date, now)) continue; // уже занимались — не беспокоим
+    if (isGoalMetToday(p.last_active_date, now, tz)) continue; // уже занимались — не беспокоим
 
     const dueCount = dueCountByUser.get(p.user_id) ?? 0;
     const atRisk = isStreakAtRisk(
@@ -44,7 +51,8 @@ export function selectReminderRecipients(
         longest_streak: p.longest_streak,
         last_active_date: p.last_active_date,
       },
-      now
+      now,
+      tz
     );
 
     if (dueCount === 0 && !atRisk) continue; // нет повода писать
